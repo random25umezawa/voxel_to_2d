@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "color-convert": "^1.9.1",
+    "jimp": "^0.2.28"
+  }
+}
