@@ -1,7 +1,7 @@
 const fs = require("fs");
 const Jimp = require("jimp");
 
-let filename = "chr_knight";
+let filename = "brakeblock";
 let cursor = 0;
 let data = fs.readFileSync("./in/"+filename+".vox")
 let palette = convertPalette(defaultPalette());
@@ -30,18 +30,18 @@ console.log(ret_data.child.models);
 //console.log(ret_data.child.models[0].size.data);
 //console.log(ret_data.child.models[0].xyzi.blocks);
 
-const delta_angle = 10;
+const delta_angle = 9;
 const angle_count = 360/delta_angle;
 
 for(let model of ret_data.child.models) {
-	let model_rate = 3;
+	let model_rate = 2;
 	let model_x = model.size.data[0]*model_rate;
 	let model_y = model.size.data[1]*model_rate;
 	let model_z = model.size.data[2];
 	let image = new Jimp(model_x*2*angle_count,model_y*2*model_z,function(err,image) {
 		let kansei_image = new Jimp(model_x*2*angle_count,model_y*2+model_z*model_rate,function(err,kansei_image) {
 			let outputImage = function() {
-				//image.scale(16,Jimp.RESIZE_NEAREST_NEIGHBOR);
+				//kansei_image.scale(1/model_rate,Jimp.RESIZE_NEAREST_NEIGHBOR);
 				image.write(out_dir+"/result.png");
 				let clone_kansei_image = kansei_image.clone();
 				for(let _d of [[1,0],[0,-1],[0,1],[-1,0]]) {
@@ -53,13 +53,14 @@ for(let model of ret_data.child.models) {
 			}
 			let oneLayer = function(_layer) {
 				return new Promise(function(resolve) {
-					let base_image = new Jimp(model_x/model_rate,model_y/model_rate,function(err,base_image) {
+					//let base_image = new Jimp(model_x/model_rate,model_y/model_rate,function(err,base_image) {
+					let base_image = new Jimp(model_x*2/model_rate,model_y*2/model_rate,function(err,base_image) {
 						//base_image.opaque();
 						console.log("layer"+_layer)
 						let flag = false;
 						for(let arr of model.xyzi.blocks) {
 							if(arr[2]==_layer) {
-								base_image.setPixelColor(palette[arr[3]-1],arr[0],arr[1]);
+								base_image.setPixelColor(palette[arr[3]-1],arr[0]+model_x/(model_rate*2),arr[1]+model_y/(model_rate*2));
 								flag = true;
 							}
 						}
@@ -70,8 +71,9 @@ for(let model of ret_data.child.models) {
 								clone_image.rotate(delta_angle*i,false);
 								image.blit(clone_image,model_x*2*i,model_y*2*_layer);
 								for(let j = 0; j < model_rate; j++) {
-									kansei_image.composite(clone_image,model_x*2*i,model_y*2-(model_z+_layer)*model_rate+j);
+									kansei_image.composite(clone_image,model_x*2*i,(model_z-_layer)*model_rate+j);
 								}
+								//kansei_image.composite(clone_image,model_x*2*i,(model_z-_layer));
 							}
 						}
 						resolve(1);
