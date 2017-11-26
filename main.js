@@ -43,6 +43,12 @@ for(let model of ret_data.child.models) {
 			let outputImage = function() {
 				//image.scale(16,Jimp.RESIZE_NEAREST_NEIGHBOR);
 				image.write(out_dir+"/result.png");
+				let clone_kansei_image = kansei_image.clone();
+				for(let _d of [[1,0],[0,-1],[0,1],[-1,0]]) {
+					kansei_image.composite(clone_kansei_image,_d[0],_d[1]);
+				}
+				kansei_image.brightness(-0.75);
+				kansei_image.composite(clone_kansei_image,0,0);
 				kansei_image.write(out_dir+"/result2.png");
 			}
 			let oneLayer = function(_layer) {
