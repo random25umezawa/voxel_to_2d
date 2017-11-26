@@ -4,11 +4,7 @@ const Jimp = require("jimp");
 let filename = "chr_knight";
 let cursor = 0;
 let data = fs.readFileSync("./in/"+filename+".vox")
-let temp_palette = defaultPalette();
-let palette = [];
-for(let i = 0; i < temp_palette.length; i++) {
-	palette.push(0x000000ff+((temp_palette[i]&0x0000ff)<<24)+((temp_palette[i]&0x00ff00)<<8)+((temp_palette[i]&0xff0000)>>8));
-}
+let palette = convertPalette(defaultPalette());
 let out_base_dir = "out";
 let out_dir = out_base_dir+"/"+filename;
 try{
@@ -31,26 +27,60 @@ console.log(getValue(4));
 let ret_data = getChunk();
 console.log(ret_data);
 console.log(ret_data.child.models);
-console.log(ret_data.child.models[0].size.data);
-console.log(ret_data.child.models[0].xyzi.blocks);
+//console.log(ret_data.child.models[0].size.data);
+//console.log(ret_data.child.models[0].xyzi.blocks);
+
+const delta_angle = 10;
+const angle_count = 360/delta_angle;
 
 for(let model of ret_data.child.models) {
-	for(let layer = 0; layer < model.size.data[2]; layer++) {
-		let image = new Jimp(model.size.data[0],model.size.data[1],function(err,image) {
-			let flag = false;
-			for(let arr of model.xyzi.blocks) {
-				if(arr[2]==layer) {
-					image.setPixelColor(palette[arr[3]-1],arr[0],arr[1]);
-					flag = true;
-				}
+	let model_rate = 2;
+	let model_x = model.size.data[0]*model_rate;
+	let model_y = model.size.data[1]*model_rate;
+	let model_z = model.size.data[2];
+	let image = new Jimp(model_x*2*angle_count,model_y*2*model_z,function(err,image) {
+		let kansei_image = new Jimp(model_x*2*angle_count,model_y*2+model_z,function(err,kansei_image) {
+			let outputImage = function() {
+				//image.scale(16,Jimp.RESIZE_NEAREST_NEIGHBOR);
+				image.write(out_dir+"/result.png");
+				kansei_image.write(out_dir+"/result2.png");
 			}
-			console.log(layer);
-			if(flag) {
-				image.scale(16,Jimp.RESIZE_NEAREST_NEIGHBOR);
-				image.write(out_dir+"/"+layer+".png");
+			let oneLayer = function(_layer) {
+				return new Promise(function(resolve) {
+					let base_image = new Jimp(model_x/model_rate,model_y/model_rate,function(err,base_image) {
+						//base_image.opaque();
+						console.log("layer"+_layer)
+						let flag = false;
+						for(let arr of model.xyzi.blocks) {
+							if(arr[2]==_layer) {
+								base_image.setPixelColor(palette[arr[3]-1],arr[0],arr[1]);
+								flag = true;
+							}
+						}
+						base_image.scale(2,Jimp.RESIZE_NEAREST_NEIGHBOR);
+						if(flag) {
+							for(let i = 0; i < angle_count; i++) {
+								let clone_image = base_image.clone();
+								clone_image.rotate(delta_angle*i,false);
+								image.blit(clone_image,model_x*2*i,model_y*2*_layer);
+								kansei_image.composite(clone_image,model_x*2*i,model_y*2-model_z-_layer);
+							}
+						}
+						resolve(1);
+					});
+				});
 			}
+			let promise_array = [];
+			for(let layer = 0; layer < model_z; layer++) {
+				promise_array.push(oneLayer(layer));
+			}
+			Promise.all(promise_array)
+			.then((_result)=>{
+				console.log(_result);
+				outputImage();
+			});
 		});
-	}
+	});
 }
 
 function getChunk() {
@@ -145,6 +175,14 @@ function defaultPalette() {
 		0xff000022, 0xff000011, 0xff00ee00, 0xff00dd00, 0xff00bb00, 0xff00aa00, 0xff008800, 0xff007700, 0xff005500, 0xff004400, 0xff002200, 0xff001100, 0xffee0000, 0xffdd0000, 0xffbb0000, 0xffaa0000,
 		0xff880000, 0xff770000, 0xff550000, 0xff440000, 0xff220000, 0xff110000, 0xffeeeeee, 0xffdddddd, 0xffbbbbbb, 0xffaaaaaa, 0xff888888, 0xff777777, 0xff555555, 0xff444444, 0xff222222, 0xff111111
 	];
+}
+
+function convertPalette(temp_palette) {
+	let return_palette = [];
+	for(let i = 0; i < temp_palette.length; i++) {
+		return_palette.push(0x000000ff+((temp_palette[i]&0x0000ff)<<24)+((temp_palette[i]&0x00ff00)<<8)+((temp_palette[i]&0xff0000)>>8));
+	}
+	return return_palette;
 }
 
 function hasNext() {
