@@ -34,12 +34,12 @@ const delta_angle = 10;
 const angle_count = 360/delta_angle;
 
 for(let model of ret_data.child.models) {
-	let model_rate = 2;
+	let model_rate = 3;
 	let model_x = model.size.data[0]*model_rate;
 	let model_y = model.size.data[1]*model_rate;
 	let model_z = model.size.data[2];
 	let image = new Jimp(model_x*2*angle_count,model_y*2*model_z,function(err,image) {
-		let kansei_image = new Jimp(model_x*2*angle_count,model_y*2+model_z,function(err,kansei_image) {
+		let kansei_image = new Jimp(model_x*2*angle_count,model_y*2+model_z*model_rate,function(err,kansei_image) {
 			let outputImage = function() {
 				//image.scale(16,Jimp.RESIZE_NEAREST_NEIGHBOR);
 				image.write(out_dir+"/result.png");
@@ -57,13 +57,15 @@ for(let model of ret_data.child.models) {
 								flag = true;
 							}
 						}
-						base_image.scale(2,Jimp.RESIZE_NEAREST_NEIGHBOR);
+						base_image.scale(model_rate,Jimp.RESIZE_NEAREST_NEIGHBOR);
 						if(flag) {
 							for(let i = 0; i < angle_count; i++) {
 								let clone_image = base_image.clone();
 								clone_image.rotate(delta_angle*i,false);
 								image.blit(clone_image,model_x*2*i,model_y*2*_layer);
-								kansei_image.composite(clone_image,model_x*2*i,model_y*2-model_z-_layer);
+								for(let j = 0; j < model_rate; j++) {
+									kansei_image.composite(clone_image,model_x*2*i,model_y*2-(model_z+_layer)*model_rate+j);
+								}
 							}
 						}
 						resolve(1);
