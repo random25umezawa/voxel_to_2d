@@ -1,7 +1,7 @@
 const fs = require("fs");
 const Jimp = require("jimp");
 
-let filename = "brakeblock";
+let filename = "pine";
 let cursor = 0;
 let data = fs.readFileSync("./in/"+filename+".vox")
 let palette = convertPalette(defaultPalette());
@@ -33,15 +33,16 @@ console.log(ret_data.child.models);
 const delta_angle = 9;
 const angle_count = 360/delta_angle;
 
+const push_rate = 0.5;
+
 for(let model of ret_data.child.models) {
 	let model_rate = 2;
 	let model_x = model.size.data[0]*model_rate;
 	let model_y = model.size.data[1]*model_rate;
 	let model_z = model.size.data[2];
-	let image = new Jimp(model_x*2*angle_count,model_y*2*model_z,function(err,image) {
-		let kansei_image = new Jimp(model_x*2*angle_count,model_y*2+model_z*model_rate,function(err,kansei_image) {
+	let image = new Jimp(model_x*angle_count*model_rate,model_y*model_z*push_rate*model_rate,function(err,image) {
+		let kansei_image = new Jimp(model_x*angle_count*model_rate,model_y*push_rate*model_rate+model_z*model_rate,function(err,kansei_image) {
 			let outputImage = function() {
-				//kansei_image.scale(1/model_rate,Jimp.RESIZE_NEAREST_NEIGHBOR);
 				image.write(out_dir+"/result.png");
 				let clone_kansei_image = kansei_image.clone();
 				for(let _d of [[1,0],[0,-1],[0,1],[-1,0]]) {
@@ -50,17 +51,19 @@ for(let model of ret_data.child.models) {
 				kansei_image.brightness(-0.75);
 				kansei_image.composite(clone_kansei_image,0,0);
 				kansei_image.write(out_dir+"/result2.png");
+				for(let i = 0; i < angle_count; i++) {
+					let clone_crop_image = kansei_image.clone();
+					clone_crop_image.crop(model_x*i*model_rate,0,model_x*model_rate,model_y*push_rate*model_rate+model_z*model_rate).write(out_dir+"/crop"+i+".png");;
+				}
 			}
 			let oneLayer = function(_layer) {
 				return new Promise(function(resolve) {
-					//let base_image = new Jimp(model_x/model_rate,model_y/model_rate,function(err,base_image) {
 					let base_image = new Jimp(model_x*2/model_rate,model_y*2/model_rate,function(err,base_image) {
-						//base_image.opaque();
 						console.log("layer"+_layer)
 						let flag = false;
 						for(let arr of model.xyzi.blocks) {
 							if(arr[2]==_layer) {
-								base_image.setPixelColor(palette[arr[3]-1],arr[0]+model_x/(model_rate*2),arr[1]+model_y/(model_rate*2));
+								base_image.setPixelColor(palette[arr[3]],arr[0]+model_x/(model_rate*2),arr[1]+model_y/(model_rate*2));
 								flag = true;
 							}
 						}
@@ -69,11 +72,11 @@ for(let model of ret_data.child.models) {
 							for(let i = 0; i < angle_count; i++) {
 								let clone_image = base_image.clone();
 								clone_image.rotate(delta_angle*i,false);
-								image.blit(clone_image,model_x*2*i,model_y*2*_layer);
-								for(let j = 0; j < model_rate; j++) {
-									kansei_image.composite(clone_image,model_x*2*i,(model_z-_layer)*model_rate+j);
+								clone_image.resize(clone_image.bitmap.width,clone_image.bitmap.height*push_rate,Jimp.RESIZE_NEAREST_NEIGHBOR);
+								image.composite(clone_image,model_x*i*model_rate,model_y*_layer*push_rate*model_rate);
+								for(let j = -1; j < model_rate; j++) {
+									kansei_image.composite(clone_image,model_x*i*model_rate,(model_z-_layer)*model_rate-j);
 								}
-								//kansei_image.composite(clone_image,model_x*2*i,(model_z-_layer));
 							}
 						}
 						resolve(1);
