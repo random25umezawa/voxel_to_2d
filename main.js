@@ -1,7 +1,7 @@
 const fs = require("fs");
 const Jimp = require("jimp");
 
-let filename = "pine";
+let filename = "nummodel";
 let cursor = 0;
 let data = fs.readFileSync("./in/"+filename+".vox")
 let palette = convertPalette(defaultPalette());
@@ -30,45 +30,54 @@ console.log(ret_data.child.models);
 //console.log(ret_data.child.models[0].size.data);
 //console.log(ret_data.child.models[0].xyzi.blocks);
 
-const delta_angle = 9;
+const delta_angle = 18;
 const angle_count = 360/delta_angle;
 
 const push_rate = 0.5;
 
+let model_count = -1;
 for(let model of ret_data.child.models) {
 	let model_rate = 2;
 	let model_x = model.size.data[0]*model_rate;
 	let model_y = model.size.data[1]*model_rate;
 	let model_z = model.size.data[2];
+	model_count++;
+	console.log("data",model.size.data);
+	console.log(model_x*angle_count*model_rate,model_y*model_z*push_rate*model_rate);
+	console.log(model_x*angle_count*model_rate,model_y*push_rate*model_rate+model_z*model_rate);
 	let image = new Jimp(model_x*angle_count*model_rate,model_y*model_z*push_rate*model_rate,function(err,image) {
 		let kansei_image = new Jimp(model_x*angle_count*model_rate,model_y*push_rate*model_rate+model_z*model_rate,function(err,kansei_image) {
+			let layer_blocks = {};
+			for(let arr of model.xyzi.blocks) {
+				if(!layer_blocks[arr[2]]) layer_blocks[arr[2]] = [];
+				layer_blocks[arr[2]].push(arr);
+			}
 			let outputImage = function() {
-				image.write(out_dir+"/result.png");
+				image.write(out_dir+"/result_"+model_count+".png");
 				let clone_kansei_image = kansei_image.clone();
 				for(let _d of [[1,0],[0,-1],[0,1],[-1,0]]) {
 					kansei_image.composite(clone_kansei_image,_d[0],_d[1]);
 				}
 				kansei_image.brightness(-0.75);
 				kansei_image.composite(clone_kansei_image,0,0);
-				kansei_image.write(out_dir+"/result2.png");
+				kansei_image.write(out_dir+"/result2_"+model_count+".png");
 				for(let i = 0; i < angle_count; i++) {
 					let clone_crop_image = kansei_image.clone();
-					clone_crop_image.crop(model_x*i*model_rate,0,model_x*model_rate,model_y*push_rate*model_rate+model_z*model_rate).write(out_dir+"/crop"+i+".png");;
+					clone_crop_image.crop(model_x*i*model_rate,0,model_x*model_rate,model_y*push_rate*model_rate+model_z*model_rate).write(out_dir+"/crop"+i+"_"+model_count+".png");;
 				}
 			}
 			let oneLayer = function(_layer) {
 				return new Promise(function(resolve) {
 					let base_image = new Jimp(model_x*2/model_rate,model_y*2/model_rate,function(err,base_image) {
-						console.log("layer"+_layer)
+						console.log("layer"+_layer);
 						let flag = false;
-						for(let arr of model.xyzi.blocks) {
-							if(arr[2]==_layer) {
+						if(layer_blocks[_layer]) {
+							for(let arr of layer_blocks[_layer]) {
 								base_image.setPixelColor(palette[arr[3]],arr[0]+model_x/(model_rate*2),arr[1]+model_y/(model_rate*2));
-								flag = true;
 							}
 						}
 						base_image.scale(model_rate,Jimp.RESIZE_NEAREST_NEIGHBOR);
-						if(flag) {
+						if(layer_blocks[_layer]) {
 							for(let i = 0; i < angle_count; i++) {
 								let clone_image = base_image.clone();
 								clone_image.rotate(delta_angle*i,false);
@@ -97,6 +106,7 @@ for(let model of ret_data.child.models) {
 }
 
 function getChunk() {
+	if(!hasNext()) return null;
 	let name = getString(4);
 	let chunk = {};
 	if(name=="MAIN") chunk = chunkMain();
@@ -119,7 +129,11 @@ function basicChunkInfo() {
 function chunkMain() {
 	let chunk_data = basicChunkInfo();
 	chunk_data.data = getSubData(chunk_data.n);
-	chunk_data.child = getChunk();
+	let chunk;
+	while(chunk = getChunk()) {
+		if(chunk.name == "PACK") chunk_data.child = chunk;
+		console.log(chunk.name);
+	}
 	return chunk_data;
 }
 
@@ -162,11 +176,20 @@ function chunkXyzi() {
 }
 
 function chunkRgba() {
-
+	let chunk_data = basicChunkInfo();
+	chunk_data.data = [];
+	let colors = [];
+	for(let i = 0; i < 0xff; i++) {
+		chunk_data.data.push(getValue(4));
+	}
+	//console.log("palette",JSON.stringify(chunk_data.data));
+	palette = convertPalette(chunk_data.data);
+	return chunk_data;
 }
 
 function chunkMatt() {
-
+	let chunk_data = basicChunkInfo();
+	return chunk_data;
 }
 
 function defaultPalette() {
@@ -192,8 +215,10 @@ function defaultPalette() {
 
 function convertPalette(temp_palette) {
 	let return_palette = [];
+	console.log("palette");
 	for(let i = 0; i < temp_palette.length; i++) {
 		return_palette.push(0x000000ff+((temp_palette[i]&0x0000ff)<<24)+((temp_palette[i]&0x00ff00)<<8)+((temp_palette[i]&0xff0000)>>8));
+		console.log(0x000000ff,((temp_palette[i]&0x0000ff)),((temp_palette[i]&0x00ff00)>>8),((temp_palette[i]&0xff0000)>>16));
 	}
 	return return_palette;
 }
