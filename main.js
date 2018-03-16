@@ -1,128 +1,154 @@
 const fs = require("fs");
 const Jimp = require("jimp");
 
-let filename = "chr_knight";
-let cursor = 0;
-let data = fs.readFileSync("./in/"+filename+".vox")
-let palette = convertPalette(defaultPalette());
-let out_base_dir = "out";
-let out_dir = out_base_dir+"/"+filename;
-try{
-	if(fs.statSync(out_base_dir));
-	else fs.mkdirSync(out_base_dir);
-}catch(err) {
-	console.log("Exception:" + err);
-	fs.mkdirSync(out_base_dir);
-}
-try{
-	if(fs.statSync(out_dir));
-	else fs.mkdirSync(out_dir);
-}catch(err) {
-	console.log("Exception:" + err);
-	fs.mkdirSync(out_dir);
-}
-
-let ret_data = getVoxData();
+const IMG_WIDTH = 128;
+const IMG_HEIGHT = 128;
 
 const delta_angle = 18;
 const angle_count = 360/delta_angle;
 
 const push_rate = 0.5;
+const model_rate = 2;
 
-for(let model_count = 0; model_count < ret_data.child.models.length; model_count++) {
-	let model = ret_data.child.models[model_count];
-	let model_rate = 2;
-	let model_x = model.size.data[0]*model_rate;
-	let model_y = model.size.data[1]*model_rate;
-	let model_z = model.size.data[2];
+const filenames = ["kusa","cookie","nummodel","brakeblock","piron","chr_knight",];
 
-	let kansei_images = [];
-	let temp_image;
-	let promise_arr = [];
-	//各角度ごとの完成系画像を用意する
-	for(let i = 0; i < angle_count; i++) {
-		promise_arr.push(new Promise((resolve,reject) => {
-			new Jimp(256,256,function(err,img) {
-				if(err) reject(err);
-				resolve(img);
-			});
-		}));
-	}
-	Promise.all(promise_arr)
-	.then(_imgs => {
-		//回転圧縮画像用の一時踏み台画像用意
-		//回転させていったん書き込み、それを読み込んで縦圧縮して完成系書き込み
-		kansei_images = _imgs;
-		return new Promise((resolve,reject) => {
-			new Jimp(model_x*2/model_rate,model_y*2/model_rate,function(err,img) {
-				if(err) reject(err);
-				resolve(img);
-			});
+let sheet_x = 0;
+let sheet_y = 0;
+
+let cursor = 0;
+let data = "";
+let palette = [];
+let out_base_dir = "allout";
+
+let kansei_images = [];
+let promise_arr = [];
+//各角度ごとの完成系画像を用意する
+for(let i = 0; i < angle_count; i++) {
+	promise_arr.push(new Promise((resolve,reject) => {
+		new Jimp(256,256,function(err,img) {
+			if(err) reject(err);
+			resolve(img);
 		});
-	})
-	.then(_img => {
-		temp_image = _img;
-	}).then(() => {
-		let layer_blocks = {};
-		for(let arr of model.xyzi.blocks) {
-			if(!layer_blocks[arr[2]]) layer_blocks[arr[2]] = [];
-			layer_blocks[arr[2]].push(arr);
+	}));
+}
+Promise.all(promise_arr)
+.then(_imgs => {
+	//回転圧縮画像用の一時踏み台画像用意
+	//回転させていったん書き込み、それを読み込んで縦圧縮して完成系書き込み
+	kansei_images = _imgs;
+})
+.then(() => {
+	//for(let filename of filenames) {
+	//return Promise.all(filenames.map(filename => {return new Promise(resolve => {
+	return filenames.reduce((promise,filename) => promise.then(() => {
+		console.log("filename",filename);
+		cursor = 0;
+		data = fs.readFileSync("./in/"+filename+".vox");
+		palette =  convertPalette(defaultPalette());
+
+		try{
+			if(fs.statSync(out_base_dir));
+			else fs.mkdirSync(out_base_dir);
+		}catch(err) {
+			console.log("Exception:" + err);
+			fs.mkdirSync(out_base_dir);
 		}
-		let outputImage = function() {
-			//image.write(out_dir+"/result_"+model_count+".png");
-			for(let i = 0; i < angle_count; i++) {
-				console.log("output","model",model_count,"angle",i);
-				let clone_kansei_image = kansei_images[i].clone();
-				for(let _d of [[1,0],[0,-1],[0,1],[-1,0]]) {
-					kansei_images[i].composite(clone_kansei_image,_d[0],_d[1]);
-				}
-				kansei_images[i].brightness(-0.75);
-				kansei_images[i].composite(clone_kansei_image,0,0);
-				kansei_images[i].write(out_dir+"/angle_"+i+"_"+model_count+".png");
-				/*
-				for(let i = 0; i < angle_count; i++) {
-					let clone_crop_image = kansei_image[i].clone();
-					clone_crop_image.crop(model_x*i*model_rate,0,model_x*model_rate,model_y*push_rate*model_rate+model_z*model_rate).write(out_dir+"/crop"+i+"_"+model_count+".png");;
-				}
-				*/
+
+		let ret_data = getVoxData();
+
+		return ret_data.child.models.reduce((promise2,model,model_count) => promise2.then(() => {
+			console.log(filename,"model",model_count);
+		//for(let model_count = 0; model_count < ret_data.child.models.length; model_count++) {
+			//console.log("output","model",model_count,"angle",i);
+			//let model = ret_data.child.models[model_count];
+			let model_x = model.size.data[0]*model_rate;
+			let model_y = model.size.data[1]*model_rate;
+			let model_z = model.size.data[2];
+
+			let _w = model_x*2/model_rate;
+			let _h = model_y*2/model_rate*push_rate+model_z;
+
+			if(sheet_x>IMG_WIDTH) {
+				sheet_x = 0;
+				sheet_y += _h*model_rate;
 			}
-		}
-		let oneLayer = function(_layer) {
-			return new Promise((resolve) => {
-				let base_image = temp_image.clone();
-				console.log("layer"+_layer);
-				if(layer_blocks[_layer]) {
-					for(let arr of layer_blocks[_layer]) {
-						console.log(arr[3],arr[0]+model_x/(model_rate*2),arr[1]+model_y/(model_rate*2));
-						base_image.setPixelColor(palette[arr[3]],arr[0]+model_x/(model_rate*2),arr[1]+model_y/(model_rate*2));
-					}
+			console.log(sheet_x,sheet_y,_w);
+
+			let temp_image;
+			return new Promise((resolve,reject) => {
+				new Jimp(model_x*2/model_rate,model_y*2/model_rate,function(err,img) {
+					if(err) reject(err);
+					resolve(img);
+				});
+			})
+			.then(_img => {
+				temp_image = _img;
+			}).then(() => {
+				let layer_blocks = {};
+				for(let arr of model.xyzi.blocks) {
+					if(!layer_blocks[arr[2]]) layer_blocks[arr[2]] = [];
+					layer_blocks[arr[2]].push(arr);
 				}
-				base_image.scale(model_rate,Jimp.RESIZE_NEAREST_NEIGHBOR);
-				if(layer_blocks[_layer]) {
-					for(let i = 0; i < angle_count; i++) {
-						let clone_image = base_image.clone();
-						clone_image.rotate(delta_angle*i,false);
-						clone_image.resize(clone_image.bitmap.width,clone_image.bitmap.height*push_rate,Jimp.RESIZE_NEAREST_NEIGHBOR);
-						//image.composite(clone_image,model_x*i*model_rate,model_y*_layer*push_rate*model_rate);
-						for(let j = -1; j < model_rate; j++) {
-							kansei_images[i].composite(clone_image,model_x*model_rate,(model_z-_layer)*model_rate-j);
+				let oneLayer = function(_layer) {
+					return new Promise((resolve) => {
+						let base_image = temp_image.clone();
+						console.log("layer"+_layer);
+						if(layer_blocks[_layer]) {
+							for(let arr of layer_blocks[_layer]) {
+								//console.log(arr[3],arr[0]+model_x/(model_rate*2),arr[1]+model_y/(model_rate*2));
+								base_image.setPixelColor(palette[arr[3]],arr[0]+model_x/(model_rate*2),arr[1]+model_y/(model_rate*2));
+							}
 						}
-					}
+						base_image.scale(model_rate,Jimp.RESIZE_NEAREST_NEIGHBOR);
+						if(layer_blocks[_layer]) {
+							for(let i = 0; i < angle_count; i++) {
+								let clone_image = base_image.clone();
+								clone_image.rotate(delta_angle*i,false);
+								clone_image.resize(clone_image.bitmap.width,clone_image.bitmap.height*push_rate,Jimp.RESIZE_NEAREST_NEIGHBOR);
+								//image.composite(clone_image,model_x*i*model_rate,model_y*_layer*push_rate*model_rate);
+								for(let j = -1; j < model_rate; j++) {
+									kansei_images[i].composite(clone_image,model_x*model_rate+sheet_x,(model_z-_layer)*model_rate-j+sheet_y);
+								}
+							}
+						}
+						resolve();
+					});
 				}
-				resolve();
+				promise_array = [];
+				for(let layer = 0; layer < model_z; layer++) {
+					promise_array.push(oneLayer(layer));
+				}
+				return Promise.all(promise_array)
+			})
+			.then(() => {
+				sheet_x += _w*model_rate;
 			});
+			;
+		//}
+		}),Promise.resolve());
+	//})}));
+	}),Promise.resolve());
+})
+.then((_result)=>{
+	for(let i = 0; i < angle_count; i++) {
+		let clone_kansei_image = kansei_images[i].clone();
+		for(let _d of [[1,0],[0,-1],[0,1],[-1,0]]) {
+			kansei_images[i].composite(clone_kansei_image,_d[0],_d[1]);
 		}
-		promise_array = [];
-		for(let layer = 0; layer < model_z; layer++) {
-			promise_array.push(oneLayer(layer));
-		}
-		Promise.all(promise_array)
-		.then((_result)=>{
-			//console.log(_result);
-			outputImage();
-		});
-	})
-	;
+		kansei_images[i].brightness(-0.75);
+		kansei_images[i].composite(clone_kansei_image,0,0);
+		kansei_images[i].write(out_base_dir+"/angle_"+i+".png");
+	}
+})
+;
+
+function calcSheetOffset(w,h) {
+	if(sheet_x+w >= IMG_WIDTH) {
+		sheet_x = 0;
+		sheet_y += h;
+	}else {
+		sheet_x += w;
+	}
 }
 
 function getVoxData(_raw) {
