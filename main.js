@@ -1,28 +1,41 @@
 const fs = require("fs");
 const Jimp = require("jimp");
 
+//出力画像サイズ
 const IMG_WIDTH = 256;
 const IMG_HEIGHT = 256;
 
+//最小回転単位
 const delta_angle = 18;
 const angle_count = 360/delta_angle;
 
-const push_rate = 0.5;
-const model_rate = 2;
+const push_rate = 0.5;	//縦方向の圧縮率(カメラの高さに当たる)
+const model_rate = 2;	//拡大率(細すぎる線が回転時に消えてしまうため一時的に拡大する)
 
-const filenames = ["nummodel","kusa","cookie","chr_knight"];
+//読み込むファイル(実行場所を基点とした、「ディレクトリの辿り部分」と「.vox」を除いたファイル名)
+const filenames = ["nummodel","kusa","cookie","chr_knight","3x3x3","crossblock","kusa","piron","pine"];
+let out_base_dir = "allout";
+//出力先フォルダなければ作成
+try{
+	if(fs.statSync(out_base_dir));
+	else fs.mkdirSync(out_base_dir);
+}catch(err) {
+	console.log("Exception:" + err);
+	fs.mkdirSync(out_base_dir);
+}
 
+//スプライトシート位置調整用
 let sheet_x = 0;
 let sheet_y = 0;
 
+//ファイル読み込み用
 let cursor = 0;
 let data = "";
 let palette = [];
-let out_base_dir = "allout";
 
-let kansei_images = [];
+let kansei_images = [];	//各角度ごとの完成形画像
 let promise_arr = [];
-//各角度ごとの完成系画像を用意する
+//各角度ごとの完成形画像を用意する
 for(let i = 0; i < angle_count; i++) {
 	promise_arr.push(new Promise((resolve,reject) => {
 		new Jimp(IMG_WIDTH,IMG_HEIGHT,function(err,img) {
@@ -30,7 +43,8 @@ for(let i = 0; i < angle_count; i++) {
 			resolve(img);
 		});
 	}));
-}
+};
+
 Promise.all(promise_arr)
 .then(_imgs => {
 	//回転圧縮画像用の一時踏み台画像用意
@@ -38,44 +52,47 @@ Promise.all(promise_arr)
 	kansei_images = _imgs;
 })
 .then(() => {
-	//for(let filename of filenames) {
-	//return Promise.all(filenames.map(filename => {return new Promise(resolve => {
+	//ファイル単位の処理
 	return filenames.reduce((promise,filename) => promise.then(() => {
+		//各種データ読み込み
 		console.log("filename",filename);
 		cursor = 0;
 		data = fs.readFileSync("./in/"+filename+".vox");
 		palette =  convertPalette(defaultPalette());
-
-		try{
-			if(fs.statSync(out_base_dir));
-			else fs.mkdirSync(out_base_dir);
-		}catch(err) {
-			console.log("Exception:" + err);
-			fs.mkdirSync(out_base_dir);
-		}
-
 		let ret_data = getVoxData();
 		console.log(ret_data);
 
+		//各モデルごとの処理
 		return ret_data.children.XYZI.reduce((promise2,XYZI,model_count) => promise2.then(() => {
 			console.log(filename,"model",model_count);
+			//モデルの3軸長さ
 			let SIZE = ret_data.children.SIZE[model_count].data;
-			let model_x = SIZE[0]*model_rate;
-			let model_y = SIZE[1]*model_rate;
+			let model_x = SIZE[0];
+			let model_y = SIZE[1];
 			let model_z = SIZE[2];
 
-			let _w = model_x*2/model_rate;
-			let _h = model_y*2/model_rate*push_rate+model_z;
+			//断面の画像サイズ
+			//一回転するから、どっちか大きいほう
+			//断面の回転時全包矩形は元の矩形の縦横2倍に収まるという前提の*2
+			let danmen_w = Math.max(model_x*2,model_y*2);
+			let danmen_h = danmen_w;
 
+			//スプライトシート上での画像サイズ
+			//断面を高さ分重ねるので_hはモデルのz大きさ分プラス
+			let _w = danmen_w*model_rate;
+			let _h = (danmen_h*push_rate+model_z)*model_rate;
+
+			//スプライトシートの改行処理
 			if(sheet_x>IMG_WIDTH) {
 				sheet_x = 0;
-				sheet_y += _h*model_rate;
+				sheet_y += _h;
 			}
 			console.log(sheet_x,sheet_y,_w);
 
+			//回転→縦圧縮を一度に処理できなかったので、回転画像描画用の一時画像を用意
 			let temp_image;
 			return new Promise((resolve,reject) => {
-				new Jimp(model_x*2/model_rate,model_y*2/model_rate,function(err,img) {
+				new Jimp(danmen_w,danmen_h,function(err,img) {
 					if(err) reject(err);
 					resolve(img);
 				});
@@ -83,19 +100,23 @@ Promise.all(promise_arr)
 			.then(_img => {
 				temp_image = _img;
 			}).then(() => {
+				//ピクセル情報整理
+				//各高さごとのピクセル配列にアクセスできる形の連想配列
 				let layer_blocks = {};
 				for(let arr of XYZI.blocks) {
 					if(!layer_blocks[arr[2]]) layer_blocks[arr[2]] = [];
 					layer_blocks[arr[2]].push(arr);
 				}
+				//各断面ごとの画像反映処理
 				let oneLayer = function(_layer) {
+					console.log("layer"+_layer);
 					return new Promise((resolve) => {
+						//透明なbase_imageに、その断面内のピクセル位置の色を塗る
 						let base_image = temp_image.clone();
-						console.log("layer"+_layer);
 						if(layer_blocks[_layer]) {
 							for(let arr of layer_blocks[_layer]) {
-								//console.log(arr[3],arr[0]+model_x/(model_rate*2),arr[1]+model_y/(model_rate*2));
-								base_image.setPixelColor(palette[arr[3]],arr[0]+model_x/(model_rate*2),arr[1]+model_y/(model_rate*2));
+								//arr = {palette_index, x, y, z}
+								base_image.setPixelColor(palette[arr[3]],arr[0]+model_x/2,arr[1]+model_y/2);
 							}
 						}
 						base_image.scale(model_rate,Jimp.RESIZE_NEAREST_NEIGHBOR);
@@ -107,7 +128,7 @@ Promise.all(promise_arr)
 								//image.composite(clone_image,model_x*i*model_rate,model_y*_layer*push_rate*model_rate);
 								for(let j = -1; j < model_rate; j++) {
 									//kansei_images[i].composite(clone_image,model_x*model_rate+sheet_x,(model_z-_layer)*model_rate-j+sheet_y);
-									kansei_images[i].composite(clone_image,model_x+sheet_x,(model_z-_layer)*model_rate-j+sheet_y);
+									kansei_images[i].composite(clone_image,model_x*model_rate+sheet_x,(model_z-_layer)*model_rate-j+sheet_y);
 								}
 							}
 						}
@@ -121,7 +142,7 @@ Promise.all(promise_arr)
 				return Promise.all(promise_array)
 			})
 			.then(() => {
-				sheet_x += _w*model_rate;
+				sheet_x += _w;
 			});
 			;
 		//}
