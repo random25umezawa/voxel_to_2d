@@ -1,7 +1,7 @@
 const fs = require("fs");
 const Jimp = require("jimp");
 
-let filename = "kusa";
+let filename = "chr_knight";
 let cursor = 0;
 let data = fs.readFileSync("./in/"+filename+".vox")
 let palette = convertPalette(defaultPalette());
@@ -42,7 +42,7 @@ for(let model_count = 0; model_count < ret_data.child.models.length; model_count
 	//各角度ごとの完成系画像を用意する
 	for(let i = 0; i < angle_count; i++) {
 		promise_arr.push(new Promise((resolve,reject) => {
-			new Jimp(1024,1024,function(err,img) {
+			new Jimp(256,256,function(err,img) {
 				if(err) reject(err);
 				resolve(img);
 			});
@@ -71,6 +71,7 @@ for(let model_count = 0; model_count < ret_data.child.models.length; model_count
 		let outputImage = function() {
 			//image.write(out_dir+"/result_"+model_count+".png");
 			for(let i = 0; i < angle_count; i++) {
+				console.log("output","model",model_count,"angle",i);
 				let clone_kansei_image = kansei_images[i].clone();
 				for(let _d of [[1,0],[0,-1],[0,1],[-1,0]]) {
 					kansei_images[i].composite(clone_kansei_image,_d[0],_d[1]);
@@ -92,6 +93,7 @@ for(let model_count = 0; model_count < ret_data.child.models.length; model_count
 				console.log("layer"+_layer);
 				if(layer_blocks[_layer]) {
 					for(let arr of layer_blocks[_layer]) {
+						console.log(arr[3],arr[0]+model_x/(model_rate*2),arr[1]+model_y/(model_rate*2));
 						base_image.setPixelColor(palette[arr[3]],arr[0]+model_x/(model_rate*2),arr[1]+model_y/(model_rate*2));
 					}
 				}
@@ -238,7 +240,7 @@ function defaultPalette() {
 }
 
 function convertPalette(temp_palette) {
-	let return_palette = [];
+	let return_palette = [0x00000000];
 	//console.log("palette");
 	for(let i = 0; i < temp_palette.length; i++) {
 		return_palette.push(0x000000ff+((temp_palette[i]&0x0000ff)<<24)+((temp_palette[i]&0x00ff00)<<8)+((temp_palette[i]&0xff0000)>>8));
