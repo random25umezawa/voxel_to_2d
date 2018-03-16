@@ -35,13 +35,12 @@ const angle_count = 360/delta_angle;
 
 const push_rate = 0.5;
 
-let model_count = -1;
-for(let model of ret_data.child.models) {
+for(let model_count = 0; model_count < ret_data.child.models.length; model_count++) {
+	let model = ret_data.child.models[model_count];
 	let model_rate = 2;
 	let model_x = model.size.data[0]*model_rate;
 	let model_y = model.size.data[1]*model_rate;
 	let model_z = model.size.data[2];
-	model_count++;
 	console.log("data",model.size.data);
 	console.log(model_x*angle_count*model_rate,model_y*model_z*push_rate*model_rate);
 	console.log(model_x*angle_count*model_rate,model_y*push_rate*model_rate+model_z*model_rate);
