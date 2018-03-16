@@ -1,8 +1,8 @@
 const fs = require("fs");
 const Jimp = require("jimp");
 
-const IMG_WIDTH = 128;
-const IMG_HEIGHT = 128;
+const IMG_WIDTH = 256;
+const IMG_HEIGHT = 256;
 
 const delta_angle = 18;
 const angle_count = 360/delta_angle;
@@ -10,7 +10,7 @@ const angle_count = 360/delta_angle;
 const push_rate = 0.5;
 const model_rate = 2;
 
-const filenames = ["kusa","cookie","nummodel","brakeblock","piron","chr_knight",];
+const filenames = ["nummodel","kusa","cookie","chr_knight"];
 
 let sheet_x = 0;
 let sheet_y = 0;
@@ -25,7 +25,7 @@ let promise_arr = [];
 //各角度ごとの完成系画像を用意する
 for(let i = 0; i < angle_count; i++) {
 	promise_arr.push(new Promise((resolve,reject) => {
-		new Jimp(256,256,function(err,img) {
+		new Jimp(IMG_WIDTH,IMG_HEIGHT,function(err,img) {
 			if(err) reject(err);
 			resolve(img);
 		});
@@ -55,15 +55,14 @@ Promise.all(promise_arr)
 		}
 
 		let ret_data = getVoxData();
+		console.log(ret_data);
 
-		return ret_data.child.models.reduce((promise2,model,model_count) => promise2.then(() => {
+		return ret_data.children.XYZI.reduce((promise2,XYZI,model_count) => promise2.then(() => {
 			console.log(filename,"model",model_count);
-		//for(let model_count = 0; model_count < ret_data.child.models.length; model_count++) {
-			//console.log("output","model",model_count,"angle",i);
-			//let model = ret_data.child.models[model_count];
-			let model_x = model.size.data[0]*model_rate;
-			let model_y = model.size.data[1]*model_rate;
-			let model_z = model.size.data[2];
+			let SIZE = ret_data.children.SIZE[model_count].data;
+			let model_x = SIZE[0]*model_rate;
+			let model_y = SIZE[1]*model_rate;
+			let model_z = SIZE[2];
 
 			let _w = model_x*2/model_rate;
 			let _h = model_y*2/model_rate*push_rate+model_z;
@@ -85,7 +84,7 @@ Promise.all(promise_arr)
 				temp_image = _img;
 			}).then(() => {
 				let layer_blocks = {};
-				for(let arr of model.xyzi.blocks) {
+				for(let arr of XYZI.blocks) {
 					if(!layer_blocks[arr[2]]) layer_blocks[arr[2]] = [];
 					layer_blocks[arr[2]].push(arr);
 				}
@@ -107,7 +106,8 @@ Promise.all(promise_arr)
 								clone_image.resize(clone_image.bitmap.width,clone_image.bitmap.height*push_rate,Jimp.RESIZE_NEAREST_NEIGHBOR);
 								//image.composite(clone_image,model_x*i*model_rate,model_y*_layer*push_rate*model_rate);
 								for(let j = -1; j < model_rate; j++) {
-									kansei_images[i].composite(clone_image,model_x*model_rate+sheet_x,(model_z-_layer)*model_rate-j+sheet_y);
+									//kansei_images[i].composite(clone_image,model_x*model_rate+sheet_x,(model_z-_layer)*model_rate-j+sheet_y);
+									kansei_images[i].composite(clone_image,model_x+sheet_x,(model_z-_layer)*model_rate-j+sheet_y);
 								}
 							}
 						}
@@ -174,39 +174,37 @@ function getChunk() {
 function basicChunkInfo() {
 	return {
 		n: getValue(4),
-		m: getValue(4)
+		m: getValue(4),
+		children: {}
 	};
+}
+
+function readChildChunks() {
+	let children = {};
+	while(hasNext()) {
+		let chunk = getChunk();
+		if(!children[chunk.name]) children[chunk.name] = [];
+		children[chunk.name].push(chunk);
+	}
+	return children;
 }
 
 function chunkMain() {
 	let chunk_data = basicChunkInfo();
 	chunk_data.data = getSubData(chunk_data.n);
-	let chunk;
-	while(chunk = getChunk()) {
-		if(chunk.name == "PACK") chunk_data.child = chunk;
-		console.log(chunk.name);
-	}
+	chunk_data.children = readChildChunks();
 	return chunk_data;
 }
 
 function chunkPack() {
 	let chunk_data = basicChunkInfo();
 	chunk_data.data = getValue(chunk_data.n);
-	chunk_data.child = {};
-	chunk_data.models = [];
-	for(let i = 0; i < chunk_data.data; i++) {
-		chunk_data.models.push({
-			size: getChunk(),
-			xyzi: getChunk()
-		});
-	}
 	return chunk_data;
 }
 
 function chunkSize() {
 	let chunk_data = basicChunkInfo();
 	chunk_data.data = [getValue(4),getValue(4),getValue(4)];
-	chunk_data.child = {};
 	chunk_data.x = chunk_data.data[0];
 	chunk_data.y = chunk_data.data[1];
 	chunk_data.z = chunk_data.data[2];
@@ -216,7 +214,6 @@ function chunkSize() {
 function chunkXyzi() {
 	let chunk_data = basicChunkInfo();
 	chunk_data.data = [];
-	chunk_data.child = {};
 	chunk_data.numVoxels = getValue(4);
 	chunk_data.blocks = [];
 	for(let i = 0; i < chunk_data.numVoxels; i++) {
