@@ -1,7 +1,7 @@
 const fs = require("fs");
 const Jimp = require("jimp");
 
-let filename = "nummodel";
+let filename = "kusa";
 let cursor = 0;
 let data = fs.readFileSync("./in/"+filename+".vox")
 let palette = convertPalette(defaultPalette());
@@ -22,13 +22,7 @@ try{
 	fs.mkdirSync(out_dir);
 }
 
-console.log(getString(4));
-console.log(getValue(4));
-let ret_data = getChunk();
-console.log(ret_data);
-console.log(ret_data.child.models);
-//console.log(ret_data.child.models[0].size.data);
-//console.log(ret_data.child.models[0].xyzi.blocks);
+let ret_data = getVoxData();
 
 const delta_angle = 18;
 const angle_count = 360/delta_angle;
@@ -41,67 +35,98 @@ for(let model_count = 0; model_count < ret_data.child.models.length; model_count
 	let model_x = model.size.data[0]*model_rate;
 	let model_y = model.size.data[1]*model_rate;
 	let model_z = model.size.data[2];
-	console.log("data",model.size.data);
-	console.log(model_x*angle_count*model_rate,model_y*model_z*push_rate*model_rate);
-	console.log(model_x*angle_count*model_rate,model_y*push_rate*model_rate+model_z*model_rate);
-	let image = new Jimp(model_x*angle_count*model_rate,model_y*model_z*push_rate*model_rate,function(err,image) {
-		let kansei_image = new Jimp(model_x*angle_count*model_rate,model_y*push_rate*model_rate+model_z*model_rate,function(err,kansei_image) {
-			let layer_blocks = {};
-			for(let arr of model.xyzi.blocks) {
-				if(!layer_blocks[arr[2]]) layer_blocks[arr[2]] = [];
-				layer_blocks[arr[2]].push(arr);
-			}
-			let outputImage = function() {
-				image.write(out_dir+"/result_"+model_count+".png");
-				let clone_kansei_image = kansei_image.clone();
-				for(let _d of [[1,0],[0,-1],[0,1],[-1,0]]) {
-					kansei_image.composite(clone_kansei_image,_d[0],_d[1]);
-				}
-				kansei_image.brightness(-0.75);
-				kansei_image.composite(clone_kansei_image,0,0);
-				kansei_image.write(out_dir+"/result2_"+model_count+".png");
-				for(let i = 0; i < angle_count; i++) {
-					let clone_crop_image = kansei_image.clone();
-					clone_crop_image.crop(model_x*i*model_rate,0,model_x*model_rate,model_y*push_rate*model_rate+model_z*model_rate).write(out_dir+"/crop"+i+"_"+model_count+".png");;
-				}
-			}
-			let oneLayer = function(_layer) {
-				return new Promise(function(resolve) {
-					let base_image = new Jimp(model_x*2/model_rate,model_y*2/model_rate,function(err,base_image) {
-						console.log("layer"+_layer);
-						let flag = false;
-						if(layer_blocks[_layer]) {
-							for(let arr of layer_blocks[_layer]) {
-								base_image.setPixelColor(palette[arr[3]],arr[0]+model_x/(model_rate*2),arr[1]+model_y/(model_rate*2));
-							}
-						}
-						base_image.scale(model_rate,Jimp.RESIZE_NEAREST_NEIGHBOR);
-						if(layer_blocks[_layer]) {
-							for(let i = 0; i < angle_count; i++) {
-								let clone_image = base_image.clone();
-								clone_image.rotate(delta_angle*i,false);
-								clone_image.resize(clone_image.bitmap.width,clone_image.bitmap.height*push_rate,Jimp.RESIZE_NEAREST_NEIGHBOR);
-								image.composite(clone_image,model_x*i*model_rate,model_y*_layer*push_rate*model_rate);
-								for(let j = -1; j < model_rate; j++) {
-									kansei_image.composite(clone_image,model_x*i*model_rate,(model_z-_layer)*model_rate-j);
-								}
-							}
-						}
-						resolve(1);
-					});
-				});
-			}
-			let promise_array = [];
-			for(let layer = 0; layer < model_z; layer++) {
-				promise_array.push(oneLayer(layer));
-			}
-			Promise.all(promise_array)
-			.then((_result)=>{
-				console.log(_result);
-				outputImage();
+
+	let kansei_images = [];
+	let temp_image;
+	let promise_arr = [];
+	//各角度ごとの完成系画像を用意する
+	for(let i = 0; i < angle_count; i++) {
+		promise_arr.push(new Promise((resolve,reject) => {
+			new Jimp(1024,1024,function(err,img) {
+				if(err) reject(err);
+				resolve(img);
+			});
+		}));
+	}
+	Promise.all(promise_arr)
+	.then(_imgs => {
+		//回転圧縮画像用の一時踏み台画像用意
+		//回転させていったん書き込み、それを読み込んで縦圧縮して完成系書き込み
+		kansei_images = _imgs;
+		return new Promise((resolve,reject) => {
+			new Jimp(model_x*2/model_rate,model_y*2/model_rate,function(err,img) {
+				if(err) reject(err);
+				resolve(img);
 			});
 		});
-	});
+	})
+	.then(_img => {
+		temp_image = _img;
+	}).then(() => {
+		let layer_blocks = {};
+		for(let arr of model.xyzi.blocks) {
+			if(!layer_blocks[arr[2]]) layer_blocks[arr[2]] = [];
+			layer_blocks[arr[2]].push(arr);
+		}
+		let outputImage = function() {
+			//image.write(out_dir+"/result_"+model_count+".png");
+			for(let i = 0; i < angle_count; i++) {
+				let clone_kansei_image = kansei_images[i].clone();
+				for(let _d of [[1,0],[0,-1],[0,1],[-1,0]]) {
+					kansei_images[i].composite(clone_kansei_image,_d[0],_d[1]);
+				}
+				kansei_images[i].brightness(-0.75);
+				kansei_images[i].composite(clone_kansei_image,0,0);
+				kansei_images[i].write(out_dir+"/angle_"+i+"_"+model_count+".png");
+				/*
+				for(let i = 0; i < angle_count; i++) {
+					let clone_crop_image = kansei_image[i].clone();
+					clone_crop_image.crop(model_x*i*model_rate,0,model_x*model_rate,model_y*push_rate*model_rate+model_z*model_rate).write(out_dir+"/crop"+i+"_"+model_count+".png");;
+				}
+				*/
+			}
+		}
+		let oneLayer = function(_layer) {
+			return new Promise((resolve) => {
+				let base_image = temp_image.clone();
+				console.log("layer"+_layer);
+				if(layer_blocks[_layer]) {
+					for(let arr of layer_blocks[_layer]) {
+						base_image.setPixelColor(palette[arr[3]],arr[0]+model_x/(model_rate*2),arr[1]+model_y/(model_rate*2));
+					}
+				}
+				base_image.scale(model_rate,Jimp.RESIZE_NEAREST_NEIGHBOR);
+				if(layer_blocks[_layer]) {
+					for(let i = 0; i < angle_count; i++) {
+						let clone_image = base_image.clone();
+						clone_image.rotate(delta_angle*i,false);
+						clone_image.resize(clone_image.bitmap.width,clone_image.bitmap.height*push_rate,Jimp.RESIZE_NEAREST_NEIGHBOR);
+						//image.composite(clone_image,model_x*i*model_rate,model_y*_layer*push_rate*model_rate);
+						for(let j = -1; j < model_rate; j++) {
+							kansei_images[i].composite(clone_image,model_x*model_rate,(model_z-_layer)*model_rate-j);
+						}
+					}
+				}
+				resolve();
+			});
+		}
+		promise_array = [];
+		for(let layer = 0; layer < model_z; layer++) {
+			promise_array.push(oneLayer(layer));
+		}
+		Promise.all(promise_array)
+		.then((_result)=>{
+			//console.log(_result);
+			outputImage();
+		});
+	})
+	;
+}
+
+function getVoxData(_raw) {
+	getString(4);
+	getValue(4);
+	return getChunk();
 }
 
 function getChunk() {
@@ -214,10 +239,10 @@ function defaultPalette() {
 
 function convertPalette(temp_palette) {
 	let return_palette = [];
-	console.log("palette");
+	//console.log("palette");
 	for(let i = 0; i < temp_palette.length; i++) {
 		return_palette.push(0x000000ff+((temp_palette[i]&0x0000ff)<<24)+((temp_palette[i]&0x00ff00)<<8)+((temp_palette[i]&0xff0000)>>8));
-		console.log(0x000000ff,((temp_palette[i]&0x0000ff)),((temp_palette[i]&0x00ff00)>>8),((temp_palette[i]&0xff0000)>>16));
+		//console.log(0x000000ff,((temp_palette[i]&0x0000ff)),((temp_palette[i]&0x00ff00)>>8),((temp_palette[i]&0xff0000)>>16));
 	}
 	return return_palette;
 }
