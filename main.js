@@ -6,14 +6,14 @@ const IMG_WIDTH = 256;
 const IMG_HEIGHT = 256;
 
 //最小回転単位
-const delta_angle = 18;
+const delta_angle = 10;
 const angle_count = 360/delta_angle;
 
 const push_rate = 0.5;	//縦方向の圧縮率(カメラの高さに当たる)
 const model_rate = 2;	//拡大率(細すぎる線が回転時に消えてしまうため一時的に拡大する)
 
 //読み込むファイル(実行場所を基点とした、「ディレクトリの辿り部分」と「.vox」を除いたファイル名)
-const filenames = ["nummodel","kusa","cookie","chr_knight","3x3x3","crossblock","kusa","piron","pine"];
+const filenames = ["nummodel","kusa","cookie","chr_knight_slim","3x3x3","kusa","piron","pine"];
 let out_base_dir = "allout";
 //出力先フォルダなければ作成
 try{
@@ -74,22 +74,23 @@ Promise.all(promise_arr)
 			//断面の画像サイズ
 			//一回転するから、どっちか大きいほう
 			//断面の回転時全包矩形は元の矩形の縦横2倍に収まるという前提の*2
-			let danmen_w = Math.max(model_x*2,model_y*2);
-			let danmen_h = danmen_w;
+			//縦横長さ違う画像でも何故か回転後ハミ出しがない。
+			let danmen_w = model_x*2;
+			let danmen_h = model_y*2;
 
 			//スプライトシート上での画像サイズ
 			//断面を高さ分重ねるので_hはモデルのz大きさ分プラス
-			let _w = danmen_w*model_rate;
-			let _h = (danmen_h*push_rate+model_z)*model_rate;
+			let _w = Math.max(danmen_w,danmen_h)*2;
+			let _h = (_w*push_rate+model_z*model_rate);
 
 			//スプライトシートの改行処理
-			if(sheet_x>IMG_WIDTH) {
+			if(sheet_x+_w>IMG_WIDTH) {
 				sheet_x = 0;
 				sheet_y += _h;
 			}
 			console.log(sheet_x,sheet_y,_w);
 
-			//回転→縦圧縮を一度に処理できなかったので、回転画像描画用の一時画像を用意
+			//断面のピクセル情報書き込み用の一時画像を用意
 			let temp_image;
 			return new Promise((resolve,reject) => {
 				new Jimp(danmen_w,danmen_h,function(err,img) {
@@ -128,7 +129,7 @@ Promise.all(promise_arr)
 								//image.composite(clone_image,model_x*i*model_rate,model_y*_layer*push_rate*model_rate);
 								for(let j = -1; j < model_rate; j++) {
 									//kansei_images[i].composite(clone_image,model_x*model_rate+sheet_x,(model_z-_layer)*model_rate-j+sheet_y);
-									kansei_images[i].composite(clone_image,model_x*model_rate+sheet_x,(model_z-_layer)*model_rate-j+sheet_y);
+									kansei_images[i].composite(clone_image,sheet_x,(model_z-_layer)*model_rate-j+sheet_y);
 								}
 							}
 						}
