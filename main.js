@@ -24,10 +24,6 @@ try{
 	fs.mkdirSync(out_base_dir);
 }
 
-//スプライトシート位置調整用
-let sheet_x = 0;
-let sheet_y = 0;
-
 //ファイル読み込み用
 let cursor = 0;
 let data = "";
@@ -35,21 +31,23 @@ let palette = [];
 
 let kansei_images = [];	//各角度ごとの完成形画像
 let promise_arr = [];
-//各角度ごとの完成形画像を用意する
-for(let i = 0; i < angle_count; i++) {
-	promise_arr.push(new Promise((resolve,reject) => {
-		new Jimp(IMG_WIDTH,IMG_HEIGHT,function(err,img) {
-			if(err) reject(err);
-			resolve(img);
-		});
-	}));
-};
 
-Promise.all(promise_arr)
-.then(_imgs => {
-	//回転圧縮画像用の一時踏み台画像用意
-	//回転させていったん書き込み、それを読み込んで縦圧縮して完成系書き込み
-	kansei_images = _imgs;
+Promise.resolve()
+.then(() => {
+	let file_arr = [];
+	for(let i = 0; i < angle_count; i++) {
+		file_arr.push(i);
+	}
+	return file_arr.reduce((prev,next) => {
+		return prev
+		.then(() => {
+			return new Promise(resolve => {
+				fs.mkdir(`${out_base_dir}/${next}`,() => {
+					resolve();
+				});
+			})
+		})
+	},Promise.resolve());
 })
 .then(() => {
 	//ファイル単位の処理
@@ -70,6 +68,7 @@ Promise.all(promise_arr)
 			let model_x = SIZE[0];
 			let model_y = SIZE[1];
 			let model_z = SIZE[2];
+			console.log(SIZE);
 
 			//断面の画像サイズ
 			//一回転するから、どっちか大きいほう
@@ -82,13 +81,6 @@ Promise.all(promise_arr)
 			//断面を高さ分重ねるので_hはモデルのz大きさ分プラス
 			let _w = Math.max(danmen_w,danmen_h)*2;
 			let _h = (_w*push_rate+model_z*model_rate);
-
-			//スプライトシートの改行処理
-			if(sheet_x+_w>IMG_WIDTH) {
-				sheet_x = 0;
-				sheet_y += _h;
-			}
-			console.log(sheet_x,sheet_y,_w);
 
 			//断面のピクセル情報書き込み用の一時画像を用意
 			let temp_image;
@@ -129,38 +121,62 @@ Promise.all(promise_arr)
 								//image.composite(clone_image,model_x*i*model_rate,model_y*_layer*push_rate*model_rate);
 								for(let j = -1; j < model_rate; j++) {
 									//kansei_images[i].composite(clone_image,model_x*model_rate+sheet_x,(model_z-_layer)*model_rate-j+sheet_y);
-									kansei_images[i].composite(clone_image,sheet_x,(model_z-_layer)*model_rate-j+sheet_y);
+									kansei_images[i].composite(clone_image,0,(model_z-_layer)*model_rate-j);
 								}
 							}
 						}
 						resolve();
 					});
 				}
-				promise_array = [];
+
+				layers = [];
+				kansei_images = [];
 				for(let layer = 0; layer < model_z; layer++) {
-					promise_array.push(oneLayer(layer));
+					layers.push(layer);
 				}
-				return Promise.all(promise_array)
+				console.log(layers);
+
+				let angles = [];
+				for(let angle_temp = 0; angle_temp < angle_count; angle_temp++) {
+					angles.push(angle_temp);
+				}
+
+				return angles.reduce((prev,next) => {
+					return prev.then(() => {
+						return new Promise((resolve,reject) => {
+							console.log(next);
+							new Jimp(_w,_h,function(err,img) {
+								if(err) reject(err);
+								kansei_images[next] = img;
+								resolve();
+							});
+						})
+					})
+				},Promise.resolve())
+				.then(() => layers.reduce((prev,next) => {
+						return prev
+						.then(() => oneLayer(next));
+					},Promise.resolve())
+				)
+				.then(() => {
+						for(let i = 0; i < angle_count; i++) {
+							let clone_kansei_image = kansei_images[i].clone();
+							for(let _d of [[1,0],[0,-1],[0,1],[-1,0]]) {
+								kansei_images[i].composite(clone_kansei_image,_d[0],_d[1]);
+							}
+							kansei_images[i].brightness(-0.75);
+							kansei_images[i].composite(clone_kansei_image,0,0);
+							kansei_images[i].write(`${out_base_dir}/${i}/${filename}_${model_count}.png`);
+						}
+				})
+				;
 			})
-			.then(() => {
-				sheet_x += _w;
-			});
 			;
-		//}
 		}),Promise.resolve());
-	//})}));
 	}),Promise.resolve());
 })
-.then((_result)=>{
-	for(let i = 0; i < angle_count; i++) {
-		let clone_kansei_image = kansei_images[i].clone();
-		for(let _d of [[1,0],[0,-1],[0,1],[-1,0]]) {
-			kansei_images[i].composite(clone_kansei_image,_d[0],_d[1]);
-		}
-		kansei_images[i].brightness(-0.75);
-		kansei_images[i].composite(clone_kansei_image,0,0);
-		kansei_images[i].write(out_base_dir+"/angle_"+i+".png");
-	}
+.then(()=>{
+	console.log("ALL END")
 })
 ;
 
